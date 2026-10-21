@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment files (SEC-011: never commit real secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Prisma
+backend/prisma/migrations/**/migration_lock.toml
+
+# Uploads / temp
+uploads/
+tmp/
+temp/
+
+# MinIO data
+minio-data/
+
+# Redis dumps
+dump.rdb
+
+# Compiled
+*.js.map
+*.d.ts
+!backend/src/**/*.d.ts
+# Hand-written source contracts must stay in the baseline (vite-env.d.ts was
+# restored as part of the @types repair; dropping it would break a fresh clone).
+!Frontend/src/**/*.d.ts
+
+# Verification-session run outputs (re-runnable; not source)
+.gate/
+
+# Per-step working specs and session scratch files (local instructions, not
+# product source). They describe what to build for one step and are superseded
+# by docs/STEP*-REPORT.md, which is the committed record.
+fix*.md

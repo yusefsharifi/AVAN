@@ -1,0 +1,231 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 14px;
+
+  --background: #F5F7FB;
+  --foreground: #0A1F5C;
+
+  --card: #FFFFFF;
+  --card-foreground: #0A1F5C;
+
+  --popover: #FFFFFF;
+  --popover-foreground: #0A1F5C;
+
+  --primary: #0047E1;
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #E8EDF5;
+  --secondary-foreground: #0A1F5C;
+
+  --muted: #EEF2F7;
+  --muted-foreground: #5B6B8A;
+
+  --accent: #00B8F0;
+  --accent-foreground: #001050;
+
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+
+  --border: rgba(0,16,80,0.10);
+  --input: transparent;
+  --input-background: #F0F4FA;
+  --switch-background: #C8D4E8;
+
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+
+  --ring: #00B8F0;
+
+  --chart-1: #0047E1;
+  --chart-2: #00B8F0;
+  --chart-3: #001050;
+  --chart-4: #16A34A;
+  --chart-5: #DC2626;
+
+  --radius: 0.625rem;
+
+  /* Navigation rail tokens.
+     Deliberately identical in both themes (see .dark below): the rail is the
+     user's stable anchor, so switching theme recolours the content canvas and
+     leaves navigation untouched. The surface is a neutral dark grey on
+     purpose -- the previous #001050 navy read as a second brand colour and
+     competed with the blue content accents, and the module sidebars each
+     invented their own palette (slate + amber, bg-primary blue, bg-card
+     light) on top of it. */
+  --sidebar: #252A31;
+  --sidebar-foreground: #D9DDE3;
+  --sidebar-primary: #00B8F0;
+  --sidebar-primary-foreground: #061018;
+  --sidebar-accent: rgba(255,255,255,0.07);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgba(255,255,255,0.09);
+  --sidebar-ring: #00B8F0;
+  /* Selected item surface. Tokenised so "active" means one thing everywhere
+     instead of bg-primary here and bg-amber-600 there. */
+  --sidebar-active: rgba(255,255,255,0.11);
+
+  /* Primary company-portal rail. Deliberately NOT --sidebar's dark grey: the
+     company portal rail is the product's primary navigation surface and keeps
+     the navy brand identity, while --sidebar is the neutral surface for the
+     ordinary module rails (finance, HR, inventory, B2B, production, ...).
+     Foreground/border/active are re-declared rather than inherited so the navy
+     rail does not depend on the grey rail's values staying put. */
+  --sidebar-navy: #0F2A4A;
+  --sidebar-navy-foreground: #E4EBF4;
+  --sidebar-navy-border: rgba(255,255,255,0.10);
+
+  --brand-gradient: linear-gradient(135deg, #001050 0%, #0047E1 55%, #00C8F5 100%);
+  --brand-gradient-soft: linear-gradient(135deg, rgba(0,16,80,0.03) 0%, rgba(0,71,225,0.03) 55%, rgba(0,200,245,0.03) 100%);
+}
+
+.dark {
+  --background: #061A45;
+  --foreground: #D8E4F4;
+
+  --card: #0A2158;
+  --card-foreground: #D8E4F4;
+
+  --popover: #0A2158;
+  --popover-foreground: #D8E4F4;
+
+  --primary: #0047E1;
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #0F2D70;
+  --secondary-foreground: #D8E4F4;
+
+  --muted: #0F2D70;
+  --muted-foreground: #8FA8C8;
+
+  --accent: #00B8F0;
+  --accent-foreground: #001050;
+
+  --destructive: #B91C1C;
+  --destructive-foreground: #FCA5A5;
+
+  --border: rgba(255,255,255,0.08);
+  --input: rgba(255,255,255,0.08);
+  --input-background: #0F2D70;
+  --switch-background: #1A3580;
+
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+
+  --ring: #00B8F0;
+
+  --chart-1: #00B8F0;
+  --chart-2: #0047E1;
+  --chart-3: #60A5FA;
+  --chart-4: #4ADE80;
+  --chart-5: #F87171;
+
+  /* Same rail values as :root, restated because .dark is a separate scope
+     and would otherwise fall back to :root on whichever token is missing.
+     Keeping them equal is the "switch theme while preserving sidebar
+     styling" requirement, expressed once in CSS rather than in every layout. */
+  --sidebar: #252A31;
+  --sidebar-foreground: #D9DDE3;
+  --sidebar-primary: #00B8F0;
+  --sidebar-primary-foreground: #061018;
+  --sidebar-accent: rgba(255,255,255,0.07);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgba(255,255,255,0.09);
+  --sidebar-ring: #00B8F0;
+  --sidebar-active: rgba(255,255,255,0.11);
+
+  /* Primary company-portal rail -- same navy in dark as in light, so the
+     portal keeps its identity across a theme switch. */
+  --sidebar-navy: #0F2A4A;
+  --sidebar-navy-foreground: #E4EBF4;
+  --sidebar-navy-border: rgba(255,255,255,0.10);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-navy: var(--sidebar-navy);
+  --color-sidebar-navy-foreground: var(--sidebar-navy-foreground);
+  --color-sidebar-navy-border: var(--sidebar-navy-border);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 { font-size: var(--text-2xl); font-weight: var(--font-weight-medium); line-height: 1.4; }
+  h2 { font-size: var(--text-xl); font-weight: var(--font-weight-medium); line-height: 1.4; }
+  h3 { font-size: var(--text-lg); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  h4 { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  label { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  button { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
+  input { font-size: var(--text-base); font-weight: var(--font-weight-normal); line-height: 1.5; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,71,225,0.2); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,71,225,0.35); }
+
+  .dark ::-webkit-scrollbar-thumb { background: rgba(0,184,240,0.25); }
+  .dark ::-webkit-scrollbar-thumb:hover { background: rgba(0,184,240,0.4); }
+}
+
+/* --brand-gradient is declared in :root but is not registered in the
+   @theme inline block above, so Tailwind cannot generate a utility for it and
+   this manual class is the only definition. It is kept.
+
+   The manual .bg-sidebar / .text-sidebar-foreground rules that used to follow
+   here were removed: every one of their inputs (--color-sidebar,
+   --color-sidebar-foreground) is already registered in @theme inline, which
+   generates the identical utilities. Both definitions existed at once, the
+   unlayered one silently winning over the generated one, which is exactly the
+   duplicate styling system that made the sidebars drift apart. */
+.bg-brand-gradient {
+  background: var(--brand-gradient);
+}

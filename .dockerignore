@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test files
+coverage/
+.nyc_output/
+test/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Fix scripts (development only)
+backend/fix-*.js
+
+# MinIO data
+minio-data/
+
+# Redis dumps
+dump.rdb
+
+# Uploads / temp
+uploads/
+tmp/
+temp/

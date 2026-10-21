@@ -1,0 +1,1 @@
+export { PermitsView } from './PermitsView';

@@ -1,0 +1,72 @@
+import { useState } from 'react';
+import { Plus, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
+import { useJournalEntry } from '../hooks';
+import type { JournalEntry } from '../types';
+
+const genId = () => `JE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+export function VoucherForm() {
+  const { create, validateBalance } = useJournalEntry();
+  const [description, setDescription] = useState('');
+  const [entries, setEntries] = useState<JournalEntry[]>([
+    { id: genId(), voucherId: '', accountId: '', accountCode: '', description: '', debit: 0, credit: 0, currency: 'IRR', exchangeRate: 1, debitBaseCurrency: 0, creditBaseCurrency: 0, sourceModule: 'manual' },
+    { id: genId(), voucherId: '', accountId: '', accountCode: '', description: '', debit: 0, credit: 0, currency: 'IRR', exchangeRate: 1, debitBaseCurrency: 0, creditBaseCurrency: 0, sourceModule: 'manual' },
+  ]);
+  
+  const validation = validateBalance(entries);
+  const inputCls = 'w-full bg-secondary border border-border rounded py-1.5 px-2 text-xs text-foreground focus:outline-none focus:border-accent';
+  
+  const addRow = () => setEntries([...entries, { id: genId(), voucherId: '', accountId: '', accountCode: '', description: '', debit: 0, credit: 0, currency: 'IRR', exchangeRate: 1, debitBaseCurrency: 0, creditBaseCurrency: 0, sourceModule: 'manual' }]);
+  const removeRow = (id: string) => setEntries(entries.filter(e => e.id !== id));
+  const updateEntry = (id: string, field: string, value: any) => setEntries(entries.map(e => e.id === id ? { ...e, [field]: value } : e));
+  
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block text-right">شرح سند</label>
+        <input dir="rtl" value={description} onChange={e => setDescription(e.target.value)} className="w-full bg-secondary border border-border rounded-lg py-2 px-3 text-sm text-foreground focus:outline-none focus:border-accent" placeholder="شرح سند حسابداری..." />
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border">
+              {['شرح', 'بدهکار', 'بستانکار', ''].map(h => <th key={h} className="text-right py-2 px-2 text-[10px] font-semibold text-foreground">{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(entry => (
+              <tr key={entry.id} className="border-b border-border/50">
+                <td className="py-1 px-2"><input type="text" value={entry.accountId || ''} onChange={e => updateEntry(entry.id, 'accountId', e.target.value)} className={`${inputCls} w-28`} placeholder="کد حساب" /></td>
+                <td className="py-1 px-2"><input dir="rtl" value={entry.description} onChange={e => updateEntry(entry.id, 'description', e.target.value)} className={inputCls} placeholder="شرح ردیف" /></td>
+                <td className="py-1 px-2"><input dir="ltr" type="number" value={entry.debit || ''} onChange={e => updateEntry(entry.id, 'debit', Number(e.target.value))} className={`${inputCls} text-left`} placeholder="۰" /></td>
+                <td className="py-1 px-2"><input dir="ltr" type="number" value={entry.credit || ''} onChange={e => updateEntry(entry.id, 'credit', Number(e.target.value))} className={`${inputCls} text-left`} placeholder="۰" /></td>
+                <td className="py-1 px-2"><button onClick={() => removeRow(entry.id)} className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500"><Trash2 className="w-3 h-3" /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      
+      <button onClick={addRow} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-accent text-accent text-xs font-medium hover:bg-accent/5">
+        <Plus className="w-3 h-3" /><span>افزودن ردیف</span>
+      </button>
+      
+      <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
+        <div className="flex items-center gap-4 text-xs">
+          <span className="text-muted-foreground">بدهکار: <span className="font-mono font-semibold text-foreground" dir="ltr">{validation.totalDebit.toLocaleString('fa-IR')}</span></span>
+          <span className="text-muted-foreground">بستانکار: <span className="font-mono font-semibold text-foreground" dir="ltr">{validation.totalCredit.toLocaleString('fa-IR')}</span></span>
+        </div>
+        <div className={`flex items-center gap-1.5 text-xs font-medium ${validation.isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
+          {validation.isBalanced ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          <span>{validation.isBalanced ? 'تراز' : `مغایرت: ${validation.difference.toLocaleString('fa-IR')}`}</span>
+        </div>
+      </div>
+      
+      <button disabled={!validation.isBalanced || !description.trim()} onClick={() => { create(entries, description); setDescription(''); }}
+        className="w-full py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        ثبت سند
+      </button>
+    </div>
+  );
+}

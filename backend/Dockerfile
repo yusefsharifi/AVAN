@@ -1,0 +1,54 @@
+# ---- Stage 1: Build ----
+FROM node:20-alpine AS builder
+
+# Install build tools for native modules (bcrypt needs make/g++/python3)
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Install dependencies (with proxy — npm registry access works fine)
+COPY backend/package.json backend/package-lock.json* ./
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+RUN npm install --ignore-scripts
+# Rebuild bcrypt with build tools installed (proxy OK for pre-built binaries)
+RUN npm rebuild bcrypt node-gyp
+
+# Install Prisma client
+COPY backend/prisma ./prisma
+# Use --network=host for prisma generate to bypass Docker proxy TLS issues
+# with binaries.prisma.sh
+RUN --network=host npx prisma generate
+
+# Copy source and build
+COPY backend/tsconfig.json backend/nest-cli.json ./
+COPY backend/src ./src
+RUN npm run build
+
+# Prune dev dependencies
+RUN npm prune --production
+
+# ---- Stage 2: Production ----
+FROM node:20-alpine AS production
+
+# Security: run as non-root
+RUN addgroup -g 1001 -S idop && \
+    adduser -S idop -u 1001
+
+WORKDIR /app
+
+# Copy built artifacts
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/prisma ./prisma
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget -qO- http://localhost:3000/api/v1/health || exit 1
+
+# Switch to non-root user
+USER idop
+
+EXPOSE 3000
+
+CMD ["node", "dist/main"]

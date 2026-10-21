@@ -1,0 +1,3 @@
+import type { LucideIcon } from 'lucide-react';
+export function EmptyState({icon:Icon,title,description,actionLabel,onAction}:{icon:LucideIcon;title:string;description:string;actionLabel?:string;onAction?:()=>void}){return <div dir="rtl" className="rounded-xl border border-dashed p-12 text-center"><Icon className="mx-auto mb-3 h-9 w-9 text-muted-foreground"/><h3 className="font-bold">{title}</h3><p className="mt-2 text-sm text-muted-foreground">{description}</p>{actionLabel&&onAction&&<button onClick={onAction} className="mt-4 rounded bg-teal-600 px-3 py-2 text-xs text-white">{actionLabel}</button>}</div>}
+export default EmptyState;

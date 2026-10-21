@@ -1,0 +1,5 @@
+import type { BidStatus, RFQStatus } from '../types';
+const labels: Record<RFQStatus | BidStatus, string> = { draft:'پیش‌نویس',published:'منتشرشده',bidding:'در حال دریافت پیشنهاد',evaluation:'در حال ارزیابی',awarded:'برنده انتخاب شد',cancelled:'لغوشده',expired:'منقضی',submitted:'ارسال‌شده',under_review:'در حال بررسی',shortlisted:'فهرست کوتاه',rejected:'ردشده' };
+const colors: Record<string,string> = { draft:'bg-slate-100 text-slate-700',published:'bg-blue-50 text-blue-700',bidding:'bg-amber-50 text-amber-700',evaluation:'bg-purple-50 text-purple-700',awarded:'bg-emerald-50 text-emerald-700',cancelled:'bg-red-50 text-red-700',expired:'bg-orange-50 text-orange-700',submitted:'bg-blue-50 text-blue-700',under_review:'bg-amber-50 text-amber-700',shortlisted:'bg-teal-50 text-teal-700',rejected:'bg-red-50 text-red-700' };
+export function StatusBadge({status,size='sm'}:{status:RFQStatus|BidStatus;size?:'sm'|'md'}) { return <span className={`inline-flex rounded-full ${size==='sm'?'px-2 py-0.5 text-[10px]':'px-3 py-1 text-xs'} ${colors[status]}`}>{labels[status]}</span>; }
+export default StatusBadge;
