@@ -9,6 +9,7 @@ import { BullService } from '../../../bull/bull.service';
 import { CreateBidDto, SubmitBidDto, FilterBidsDto } from '../dto/create-bid.dto';
 import { PaginatedResult } from '../dto/enums';
 import { B2bGatewayService } from './b2b-gateway.service';
+import { B2BAccessContext, isSupervisorRole } from './b2b-access';
 import { encryptBidFinancials, decryptBidFinancials } from '../utils/bid-encryption.util';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -321,12 +322,59 @@ export class BidService {
     };
   }
 
-  async findById(id: string, requesterId?: string): Promise<any> {
-    const bid = await this.findByIdInternal(id);
+  /**
+   * SECURITY FIX (SEC-024 / IDOR-02): bid detail is scope-checked.
+   * A company-level actor may only read bids whose supplier is their own
+   * company or whose RFQ belongs to their company. Supervisors read within
+   * their zone scope. The scope check is part of the query itself
+   * (findFirst) so a foreign record resolves to "not found" — no
+   * information leak about its existence.
+   */
+  async findById(id: string, requesterId?: string, access?: B2BAccessContext): Promise<any> {
+    const bid = await this.findByIdScoped(id, access);
     return bid;
   }
 
-  async getBidsForRfq(rfqId: string, requesterId: string): Promise<any[]> {
+  private async findByIdScoped(id: string, access?: B2BAccessContext): Promise<any> {
+    const where: Record<string, unknown> = { id };
+
+    if (access?.zoneId) where['zoneId'] = access.zoneId;
+    if (access?.companyId && !isSupervisorRole(access.role)) {
+      where['OR'] = [
+        { supplierId: access.companyId },
+        { rfq: { companyId: access.companyId } },
+      ];
+    }
+
+    const bid = await this.prisma.bid.findFirst({ where });
+    if (!bid) {
+      throw new AppException('BID_NOT_FOUND');
+    }
+    return bid;
+  }
+
+  async getBidsForRfq(rfqId: string, requesterId: string, access?: B2BAccessContext): Promise<any[]> {
+    const supplierCompanyId = access?.companyId || null;
+
+    // SECURITY FIX (SEC-024 / IDOR-03): verify the requester participates in
+    // this tender before listing its bids.
+    if (supplierCompanyId && !isSupervisorRole(access?.role)) {
+      const allowed = await this.prisma.rFQ.findFirst({
+        where: {
+          id: rfqId,
+          OR: [
+            { companyId: supplierCompanyId },
+            { status: 'PUBLISHED', isPublic: true },
+            { status: 'PUBLISHED', invitedSupplierIds: { has: supplierCompanyId } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!allowed) {
+        throw new AppException('RFQ_NOT_FOUND');
+      }
+    }
+
     const rfq = await this.prisma.rFQ.findUnique({ where: { id: rfqId } });
     if (!rfq) {
       throw new AppException('RFQ_NOT_FOUND');
@@ -340,10 +388,13 @@ export class BidService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Apply sealed visibility rules
+    // Apply sealed visibility rules.
+    // FIXED (SEC-024): the buyer comparison previously used rfq.companyId
+    // === requesterId (a user id), which never matched — now compares to
+    // the requester's COMPANY id; same for suppliers.
     return bids.map((bid) => {
-      const isBuyer = rfq.companyId === requesterId;
-      const isSupplier = bid.supplierId === requesterId;
+      const isBuyer = !!supplierCompanyId && rfq.companyId === supplierCompanyId;
+      const isSupplier = !!supplierCompanyId && bid.supplierId === supplierCompanyId;
 
       // Buyer sees all bids for their RFQ
       if (isBuyer) return bid;
@@ -351,6 +402,7 @@ export class BidService {
       // Supplier sees only their own bid
       if (isSupplier) return bid;
 
+      // Supervisors without a company scope see the sealed-safe view
       // For SEALED bids before CLOSED: hide financial data
       if (rfq.biddingMode === 'SEALED' && !['CLOSED', 'UNDER_EVALUATION', 'AWARDED'].includes(rfq.status)) {
         return {

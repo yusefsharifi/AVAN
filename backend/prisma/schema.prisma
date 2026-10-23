@@ -287,6 +287,8 @@ model User {
   hostedVisits   VisitorRequest[] @relation("VisitorHost")
   approvedVisits VisitorRequest[] @relation("VisitorApprover")
   digitalCertificates DigitalCertificate[]
+  guardShifts      GuardShift[]
+  guardAssignments GuardAssignment[]
 
   @@index([zoneId])
   @@index([companyId])
@@ -524,6 +526,7 @@ model Zone {
   vehicles            Vehicle[]
   trafficLogs         TrafficLog[]
   guardShifts         GuardShift[]
+  guardAssignments    GuardAssignment[]
   gateIncidents       GateIncident[]
   blacklistEntries    Blacklist[]
   workflowDefinitions WorkflowDefinition[]
@@ -635,6 +638,8 @@ model Gate {
 
   zone        Zone         @relation(fields: [zoneId], references: [id])
   trafficLogs TrafficLog[]
+  guardShifts      GuardShift[]
+  guardAssignments GuardAssignment[]
 
   @@unique([zoneId, code])
   @@index([zoneId])
@@ -970,10 +975,37 @@ model GuardShift {
   summary       Json?
   createdAt     DateTime  @default(now())
 
-  zone Zone @relation(fields: [zoneId], references: [id])
+  zone  Zone @relation(fields: [zoneId], references: [id])
+  // SECURITY FIX (SEC-025): guardId/gateId are real relations now, so the
+  // integrity of shift records is enforced by the database itself.
+  guard User @relation(fields: [guardId], references: [id])
+  gate  Gate @relation(fields: [gateId], references: [id])
 
   @@index([zoneId, guardId])
   @@index([gateId, startedAt])
+}
+
+// SECURITY FIX (SEC-025): explicit assignment of a guard to a zone/gate post.
+// The GuardScopeGuard derives the guard's data scope exclusively from an
+// ACTIVE assignment with a valid time window — never from token claims or
+// the company-scope guard pattern.
+model GuardAssignment {
+  id        String    @id @default(uuid())
+  guardId   String
+  zoneId    String
+  gateId    String?
+  postType  String    // GATE_POST, PATROL, ...
+  validFrom DateTime
+  validTo   DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  guard User  @relation(fields: [guardId], references: [id])
+  zone  Zone  @relation(fields: [zoneId], references: [id])
+  gate  Gate? @relation(fields: [gateId], references: [id])
+
+  @@index([guardId, isActive])
+  @@index([zoneId, gateId])
 }
 
 model GateIncident {

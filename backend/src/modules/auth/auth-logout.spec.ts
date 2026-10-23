@@ -172,7 +172,15 @@ describe('Auth Logout & Session Invalidation (SEC-004/BUG-001 fix)', () => {
         isRevoked: false,
         expiresAt: new Date(Date.now() + 86400000),
         userId: 'user-1',
-        user: { id: 'user-1', role: 'COMPANY_STAFF', zoneId: null, companyId: null },
+        user: {
+          id: 'user-1',
+          role: 'COMPANY_STAFF',
+          zoneId: null,
+          companyId: null,
+          status: 'ACTIVE',
+          deletedAt: null,
+          lockedUntil: null,
+        },
       });
       prisma.userSession.update.mockResolvedValue({});
       prisma.userSession.create.mockResolvedValue({});

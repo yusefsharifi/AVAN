@@ -25,6 +25,7 @@ interface PaginatedResult<T> {
   };
 }
 import { B2bGatewayService } from './b2b-gateway.service';
+import { B2BAccessContext, isSupervisorRole } from './b2b-access';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 
@@ -147,8 +148,13 @@ export class RfqService {
    * commercial terms stay immutable. zoneId/companyId are not writable here
    * (absent from UpdateRfqDto) so a tender can never be moved between tenants.
    */
-  async update(id: string, dto: UpdateRfqDto, updatedBy: string): Promise<any> {
+  async update(id: string, dto: UpdateRfqDto, updatedBy: string, access?: B2BAccessContext): Promise<any> {
     const rfq = await this.findByIdInternal(id);
+
+    // SECURITY FIX (SEC-024): only the owning company may mutate its draft
+    // (supervisors bypass via scope). Respond as not-found otherwise —
+    // never leak the existence of someone else's tender.
+    this.assertRfqOwnership(rfq, access);
 
     if (rfq.status !== 'DRAFT') {
       throw new AppException('RFQ_INVALID_STATUS', {
@@ -567,9 +573,50 @@ export class RfqService {
     };
   }
 
-  async findById(id: string, requesterId?: string): Promise<any> {
-    const rfq = await this.findByIdInternal(id);
+  /**
+   * SECURITY FIX (SEC-024 / IDOR-01): RFQ detail is now scope-checked.
+   * `requesterId`/`access` are server-derived (request.user / request.zoneId /
+   * request.companyId). A company-level actor may only read:
+   *   - RFQs owned by their own company, or
+   *   - PUBLIC & PUBLISHED RFQs, or
+   *   - PUBLISHED RFQs to which their company was explicitly invited.
+   *
+   * Supervisory roles (SUPER_ADMIN / ZONE_MANAGER / ZONE_OPERATOR) read
+   * everything within their (implicit or explicit) zone scope.
+   * Reads go through `findFirst` with the scope in the `where` clause — the
+   * record itself must carry the scope, never the client-supplied payload.
+   */
+  async findById(id: string, requesterId?: string, access?: B2BAccessContext): Promise<any> {
+    const where: Record<string, unknown> = { id };
+
+    if (access?.zoneId) where.zoneId = access.zoneId;
+    if (access?.companyId && !isSupervisorRole(access.role)) {
+      where.OR = [
+        { companyId: access.companyId },
+        { status: 'PUBLISHED', isPublic: true },
+        { status: 'PUBLISHED', invitedSupplierIds: { has: access.companyId } },
+      ];
+    }
+
+    const rfq = await this.prisma.rFQ.findFirst({ where });
+    if (!rfq) {
+      throw new AppException('RFQ_NOT_FOUND');
+    }
     return rfq;
+  }
+
+  /**
+   * Rejects access when a company-level actor touches a record owned by a
+   * different company (SEC-024). No success/leak: respond like "not found".
+   */
+  private assertRfqOwnership(rfq: any, access?: B2BAccessContext): void {
+    if (
+      access?.companyId &&
+      !isSupervisorRole(access.role) &&
+      rfq.companyId !== access.companyId
+    ) {
+      throw new AppException('RFQ_NOT_FOUND');
+    }
   }
 
   async findForSupplier(
@@ -725,14 +772,38 @@ export class RfqService {
     return updated;
   }
 
-  async getClarifications(rfqId: string, requesterCompanyId?: string): Promise<any[]> {
+  async getClarifications(
+    rfqId: string,
+    requesterCompanyId?: string,
+    access?: B2BAccessContext,
+  ): Promise<any[]> {
+    // SECURITY FIX (SEC-024 / IDOR-03): only participants may list the
+    // clarifications of a tender — the owning company, or (for supplier
+    // actors) a PUBLISHED tender that is public or invited them.
+    if (access?.companyId && !isSupervisorRole(access.role)) {
+      const allowed = await this.prisma.rFQ.findFirst({
+        where: {
+          id: rfqId,
+          OR: [
+            { companyId: access.companyId },
+            { status: 'PUBLISHED', isPublic: true },
+            { status: 'PUBLISHED', invitedSupplierIds: { has: access.companyId } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!allowed) {
+        throw new AppException('RFQ_NOT_FOUND');
+      }
+    }
+
     return this.prisma.rFQClarification.findMany({
       where: {
         rfqId,
         OR: [
           { isPublic: true },
-          ...(requesterCompanyId
-            ? [{ rfq: { companyId: requesterCompanyId } }]
+          ...(access?.companyId || requesterCompanyId
+            ? [{ rfq: { companyId: access?.companyId || requesterCompanyId } }]
             : []),
         ],
       },

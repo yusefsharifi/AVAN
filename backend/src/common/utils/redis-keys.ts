@@ -12,6 +12,14 @@ export const REDIS_KEYS = {
   authReset: (token: string) => `auth:reset:${token}`,
   userProfile: (userId: string) => `user:profile:${userId}`,
   userPermissions: (userId: string) => `user:permissions:${userId}`,
+  /**
+   * SECURITY (SEC-020): short-lived cache of the user's CURRENT auth state
+   * (status/role/zoneId/companyId/deletedAt) used by JwtGuard to reject
+   * stale tokens. Deliberately nested under the user:profile:${id}: auth
+   * namespace so it is invalidated by the existing
+   * `user:profile:${id}*` delPattern calls on update/softDelete/suspend.
+   */
+  userAuthState: (userId: string) => `user:profile:${userId}:auth`,
 
   // M2: Zone & Company
   zoneSettings: (zoneId: string) => `zone:settings:${zoneId}`,
@@ -174,6 +182,7 @@ export const REDIS_TTL = {
   PASSWORD_RESET: 60 * 60,        // 1 hr
   USER_PROFILE: 5 * 60,           // 5 min
   USER_PERMISSIONS: 5 * 60,       // 5 min
+  USER_AUTH_STATE: 45,            // 45 sec (SEC-020 staleness window for JwtGuard)
 
   // M2
   ZONE_SETTINGS: 10 * 60,         // 10 min

@@ -62,8 +62,11 @@ export class BidController {
   async getBidsForRfq(
     @Param('rfqId') rfqId: string,
     @CurrentUser('sub') userId: string,
+    @ZoneId() zoneId: string | undefined,
+    @CurrentUser('companyId') companyId: string | undefined,
+    @CurrentUser('role') role: string | undefined,
   ) {
-    const data = await this.bidService.getBidsForRfq(rfqId, userId);
+    const data = await this.bidService.getBidsForRfq(rfqId, userId, { zoneId, companyId, role });
     return { success: true, data };
   }
 
@@ -74,8 +77,11 @@ export class BidController {
   async findById(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
+    @ZoneId() zoneId: string | undefined,
+    @CurrentUser('companyId') companyId: string | undefined,
+    @CurrentUser('role') role: string | undefined,
   ) {
-    const data = await this.bidService.findById(id, userId);
+    const data = await this.bidService.findById(id, userId, { zoneId, companyId, role });
     return { success: true, data };
   }
 

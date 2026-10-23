@@ -329,6 +329,33 @@ export class UserService {
     });
   }
 
+  private async invalidateUserCaches(id: string): Promise<void> {
+    await this.redis.delPattern(`user:profile:${id}*`);
+    await this.redis.delPattern(`user:permissions:${id}*`);
+    // Effective permissions cache used by PermissionsService
+    await this.redis.delPattern(`user:permissions:effective:${id}*`);
+  }
+
+  /**
+   * SECURITY FIX (SEC-021): revoke every active session of a user when their
+   * scope (role / zone / company) or status changed, and record the
+   * revocation in the audit trail. This forces re-login and — combined with
+   * JwtGuard's stale-token check — ensures old tokens stop working at once.
+   */
+  private async revokeSessionsForScopeChange(id: string, reason: string): Promise<void> {
+    await this.prisma.userSession.updateMany({
+      where: { userId: id, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    await this.audit.log({
+      targetId: id,
+      targetType: 'User',
+      action: 'USER_SESSIONS_REVOKED',
+      metadata: { reason },
+    });
+  }
+
   async update(
     id: string,
     dto: UpdateUserDto,
@@ -365,6 +392,15 @@ export class UserService {
       );
     }
 
+    // SECURITY FIX (SEC-021): detect whether the requested change affects the
+    // user's data scope or status. Only profile fields (firstName / lastName /
+    // avatarKey) may change without revoking sessions.
+    const scopeChanged =
+      (dto.role !== undefined && dto.role !== user.role) ||
+      (dto.zoneId !== undefined && dto.zoneId !== user.zoneId) ||
+      (dto.companyId !== undefined && dto.companyId !== user.companyId) ||
+      (dto.status !== undefined && dto.status !== user.status);
+
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
@@ -378,8 +414,11 @@ export class UserService {
       },
     });
 
-    await this.redis.delPattern(`user:profile:${id}*`);
-    await this.redis.delPattern(`user:permissions:${id}*`);
+    await this.invalidateUserCaches(id);
+
+    if (scopeChanged) {
+      await this.revokeSessionsForScopeChange(id, 'scope-change');
+    }
 
     await this.audit.log({
       userId: actor.userId,
@@ -405,13 +444,10 @@ export class UserService {
       data: { deletedAt: new Date(), status: UserStatus.BANNED },
     });
 
-    await this.prisma.userSession.updateMany({
-      where: { userId: id, isRevoked: false },
-      data: { isRevoked: true },
-    });
-
-    await this.redis.delPattern(`user:profile:${id}*`);
-    await this.redis.delPattern(`user:permissions:${id}*`);
+    // Unified revocation flow (SEC-021): cache invalidation + session
+    // revocation + USER_SESSIONS_REVOKED audit entry.
+    await this.invalidateUserCaches(id);
+    await this.revokeSessionsForScopeChange(id, 'soft-delete');
 
     await this.audit.log({
       userId: actor.userId,
@@ -430,10 +466,8 @@ export class UserService {
       data: { status: UserStatus.SUSPENDED },
     });
 
-    await this.prisma.userSession.updateMany({
-      where: { userId: id, isRevoked: false },
-      data: { isRevoked: true },
-    });
+    await this.invalidateUserCaches(id);
+    await this.revokeSessionsForScopeChange(id, 'suspend');
 
     await this.audit.log({
       userId: actor.userId,
@@ -453,11 +487,11 @@ export class UserService {
       data: { status },
     });
 
-    if (status === UserStatus.SUSPENDED || status === UserStatus.BANNED) {
-      await this.prisma.userSession.updateMany({
-        where: { userId: id, isRevoked: false },
-        data: { isRevoked: true },
-      });
+    await this.invalidateUserCaches(id);
+
+    // SECURITY FIX (SEC-021): deactivating a user kills all their sessions.
+    if (status !== UserStatus.ACTIVE) {
+      await this.revokeSessionsForScopeChange(id, 'status-change');
     }
 
     await this.audit.log({
@@ -481,6 +515,10 @@ export class UserService {
         lockedUntil: null,
       },
     });
+
+    // Status changed → invalidate cached auth state so JwtGuard stops
+    // rejecting this user (no session revocation needed for reactivation).
+    await this.invalidateUserCaches(id);
 
     await this.audit.log({
       userId: actor.userId,

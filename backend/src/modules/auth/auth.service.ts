@@ -92,6 +92,43 @@ export class AuthService {
     // 2. Hash password
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
+    // SECURITY FIX (SEC-018): Never trust client-supplied org identifiers.
+    // If zoneId/companyId are provided, validate them against the live DB:
+    //  - zone must exist and not be soft-deleted
+    //  - company must exist, not be soft-deleted AND belong to the same zone
+    // On failure the user is created WITHOUT any org assignment (null) —
+    // activation of the assignment is later done by an admin.
+    let zoneId: string | null = null;
+    let companyId: string | null = null;
+
+    if (dto.zoneId) {
+      const zone = await this.prisma.zone.findUnique({
+        where: { id: dto.zoneId },
+      });
+      if (!zone || zone.deletedAt) {
+        throw new BadRequestException(ERROR_CODES.ZONE_NOT_FOUND);
+      }
+      zoneId = zone.id;
+    }
+
+    if (dto.companyId) {
+      if (!dto.zoneId) {
+        // A company can only be assigned together with its owning zone.
+        throw new BadRequestException(ERROR_CODES.USER_COMPANY_MISMATCH);
+      }
+      const company = await this.prisma.company.findUnique({
+        where: { id: dto.companyId },
+        select: { id: true, zoneId: true, deletedAt: true },
+      });
+      if (!company || company.deletedAt) {
+        throw new BadRequestException(ERROR_CODES.COMPANY_NOT_FOUND);
+      }
+      if (company.zoneId !== dto.zoneId) {
+        throw new BadRequestException(ERROR_CODES.USER_COMPANY_MISMATCH);
+      }
+      companyId = company.id;
+    }
+
     // 3. Create user with PENDING status
     // SECURITY FIX (SEC-005): Never trust client-supplied role.
     // All self-registrations default to COMPANY_STAFF.
@@ -104,8 +141,8 @@ export class AuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         nationalId: dto.nationalId || null,
-        zoneId: dto.zoneId || null,
-        companyId: dto.companyId || null,
+        zoneId,
+        companyId,
         role: UserRole.COMPANY_STAFF,
         status: UserStatus.PENDING,
       },
@@ -118,14 +155,20 @@ export class AuthService {
       this.logger.warn(`Failed to send OTP to ${dto.phone}: ${err}`);
     }
 
-    // 5. Create AuditLog entry
+    // 5. Create AuditLog entry — built from the FINAL values persisted in the
+    // database (user.zoneId / user.companyId), never from the raw DTO.
     await this.audit.log({
-      zoneId: dto.zoneId || undefined,
+      zoneId: user.zoneId || undefined,
       userId: user.id,
       targetId: user.id,
       targetType: 'User',
       action: 'USER_REGISTERED',
-      metadata: { email: dto.email, role: UserRole.COMPANY_STAFF },
+      metadata: {
+        email: dto.email,
+        role: UserRole.COMPANY_STAFF,
+        zoneId: user.zoneId,
+        companyId: user.companyId,
+      },
     });
 
     return { message: 'ثبت نام با موفقیت انجام شد. کد تأیید به تلفن همراه شما ارسال شد.' };
@@ -157,12 +200,17 @@ export class AuthService {
       throw new AppException('AUTH_INVALID_CREDENTIALS');
     }
 
-    // 2. Check user status
+    // 2. Check user status — WHITELIST approach (SEC-019)
     if (user.status === UserStatus.SUSPENDED) {
       throw new AppException('AUTH_ACCOUNT_SUSPENDED');
     }
     if (user.status === UserStatus.BANNED) {
       throw new AppException('AUTH_ACCOUNT_BANNED');
+    }
+    // Every other status (PENDING and any future enum value) is rejected:
+    // only ACTIVE accounts may obtain tokens.
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new AppException('AUTH_ACCOUNT_NOT_ACTIVE');
     }
 
     // 3. Check lockout
@@ -444,13 +492,32 @@ export class AuthService {
       throw new AppException('AUTH_TOKEN_EXPIRED');
     }
 
-    // 4. Revoke old session (token rotation)
+    // 4. Check the CURRENT status of the session's user (SEC-019).
+    // Only ACTIVE, non-deleted users with an expired (or absent) lock may
+    // refresh. Otherwise the session is revoked so the stale refresh token
+    // cannot be replayed.
+    const sessionUser = session.user;
+    const isLoggable =
+      sessionUser &&
+      !sessionUser.deletedAt &&
+      sessionUser.status === UserStatus.ACTIVE &&
+      (!sessionUser.lockedUntil || sessionUser.lockedUntil <= new Date());
+
+    if (!isLoggable) {
+      await this.prisma.userSession.update({
+        where: { id: session.id },
+        data: { isRevoked: true },
+      });
+      throw new AppException('AUTH_REFRESH_REVOKED');
+    }
+
+    // 5. Revoke old session (token rotation)
     await this.prisma.userSession.update({
       where: { id: session.id },
       data: { isRevoked: true },
     });
 
-    // 5. Generate new tokens
+    // 6. Generate new tokens
     const { accessToken, refreshToken: newRefreshToken, expiresAt } =
       await this.generateTokens(
         session.user.id,
@@ -459,7 +526,7 @@ export class AuthService {
         session.user.companyId || undefined,
       );
 
-    // 6. Create new session
+    // 7. Create new session
     const hashedRefresh = crypto
       .createHash('sha256')
       .update(newRefreshToken)
@@ -476,7 +543,7 @@ export class AuthService {
       },
     });
 
-    // 7. Audit
+    // 8. Audit
     await this.audit.log({
       zoneId: session.user.zoneId || undefined,
       userId: session.user.id,
@@ -857,6 +924,11 @@ export class AuthService {
     });
     if (!targetUser) {
       throw new AppException('USER_NOT_FOUND');
+    }
+
+    // SECURITY FIX (SEC-019): never impersonate inactive/deleted accounts.
+    if (targetUser.deletedAt || targetUser.status !== UserStatus.ACTIVE) {
+      throw new AppException('AUTH_ACCOUNT_NOT_ACTIVE');
     }
 
     // 2. Generate limited access token (30 min, impersonation flag)

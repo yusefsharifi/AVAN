@@ -28,6 +28,7 @@ import { JwtGuard } from '../../common/guards/jwt.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ZoneGuard } from '../../common/guards/zone.guard';
+import { GuardScopeGuard } from '../../common/guards/guard-scope.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZoneId } from '../../common/decorators/zone.decorator';
@@ -36,7 +37,10 @@ import { successResponse } from '../../common/dto/response.dto';
 
 @ApiTags('Guard Portal')
 @Controller('guard')
-@UseGuards(JwtGuard, ZoneGuard, RolesGuard, PermissionsGuard)
+// SEC-025: GuardScopeGuard gives the GUARD role its scope from an active
+// GuardAssignment (request.guardScope); ZONE_OPERATOR / ZONE_MANAGER pass
+// through to ZoneGuard's normal zone scope.
+@UseGuards(JwtGuard, GuardScopeGuard, ZoneGuard, RolesGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class GuardPortalController {
   constructor(private readonly guardPortalService: GuardPortalService) {}

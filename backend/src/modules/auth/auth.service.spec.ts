@@ -10,6 +10,7 @@ import { IdopGateway } from '../../gateway/idop.gateway';
 import { SmsService } from '../notifications/services/sms.service';
 import { EmailService } from '../notifications/services/email.service';
 import { AppException } from '../../common/exceptions/app.exception';
+import { BadRequestException } from '@nestjs/common';
 import { UserRole, UserStatus } from '@prisma/client';
 
 describe('AuthService', () => {
@@ -38,6 +39,12 @@ describe('AuthService', () => {
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+      },
+      zone: {
+        findUnique: jest.fn(),
+      },
+      company: {
+        findUnique: jest.fn(),
       },
       passwordResetToken: {
         create: jest.fn(),
@@ -274,7 +281,15 @@ describe('AuthService', () => {
         isRevoked: false,
         expiresAt: new Date(Date.now() + 86400000),
         userId: 'user-1',
-        user: { id: 'user-1', role: 'COMPANY_STAFF', zoneId: null, companyId: null },
+        user: {
+          id: 'user-1',
+          role: 'COMPANY_STAFF',
+          zoneId: null,
+          companyId: null,
+          status: UserStatus.ACTIVE,
+          deletedAt: null,
+          lockedUntil: null,
+        },
       });
       prisma.userSession.update.mockResolvedValue({});
       prisma.userSession.create.mockResolvedValue({});
@@ -375,6 +390,206 @@ describe('AuthService', () => {
       await expect(
         service.verifyOtp({ phone: '09121234567', code: '000000', purpose: 'LOGIN' }),
       ).rejects.toThrow(AppException);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECURITY (SEC-018/SEC-019) — org-scope validation & status whitelist
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('register — org scope validation', () => {
+    const baseDto = {
+      email: 'new@test.com',
+      phone: '09121234567',
+      password: 'Test1234',
+      firstName: 'Ali',
+      lastName: 'Rezaei',
+    };
+
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.otpCode.updateMany.mockResolvedValue({});
+      prisma.otpCode.create.mockResolvedValue({});
+    });
+
+    it('should reject registration with an unknown zoneId', async () => {
+      prisma.zone.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.register({ ...baseDto, zoneId: 'zone-x' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject registration with a soft-deleted zone', async () => {
+      prisma.zone.findUnique.mockResolvedValue({ id: 'zone-1', deletedAt: new Date() });
+
+      await expect(
+        service.register({ ...baseDto, zoneId: 'zone-1' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a companyId from another zone', async () => {
+      prisma.zone.findUnique.mockResolvedValue({ id: 'zone-1', deletedAt: null });
+      prisma.company.findUnique.mockResolvedValue({
+        id: 'company-9',
+        zoneId: 'zone-OTHER',
+        deletedAt: null,
+      });
+
+      await expect(
+        service.register({ ...baseDto, zoneId: 'zone-1', companyId: 'company-9' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a companyId without a zoneId', async () => {
+      await expect(
+        service.register({ ...baseDto, companyId: 'company-9' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should persist zone/company with a valid combination', async () => {
+      prisma.zone.findUnique.mockResolvedValue({ id: 'zone-1', deletedAt: null });
+      prisma.company.findUnique.mockResolvedValue({
+        id: 'company-1',
+        zoneId: 'zone-1',
+        deletedAt: null,
+      });
+      prisma.user.create.mockResolvedValue({
+        id: 'user-1',
+        zoneId: 'zone-1',
+        companyId: 'company-1',
+        status: 'PENDING',
+      });
+
+      await service.register({ ...baseDto, zoneId: 'zone-1', companyId: 'company-1' });
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ zoneId: 'zone-1', companyId: 'company-1' }),
+        }),
+      );
+    });
+
+    it('should build the audit log from the FINAL DB values, not the DTO', async () => {
+      prisma.user.create.mockResolvedValue({ id: 'user-9', zoneId: null, companyId: null });
+
+      await service.register({ ...baseDto, zoneId: undefined });
+
+      expect((service as any).audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          zoneId: undefined, // from user.zoneId (null → undefined), NOT from the DTO
+          action: 'USER_REGISTERED',
+        }),
+      );
+    });
+  });
+
+  describe('login — status whitelist (SEC-019)', () => {
+    it('should reject a PENDING user with AUTH_ACCOUNT_NOT_ACTIVE and issue no tokens', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        status: UserStatus.PENDING,
+        lockedUntil: null,
+        deletedAt: null,
+      });
+
+      await expect(
+        service.login({ identifier: 'pending@test.com', password: 'Test1234' }, '127.0.0.1', 'test'),
+      ).rejects.toMatchObject({ code: 'AUTH_ACCOUNT_NOT_ACTIVE' });
+
+      expect(prisma.userSession.create).not.toHaveBeenCalled();
+      expect(redis.set).not.toHaveBeenCalled();
+    });
+
+    it('should reject locked accounts when the lock has not expired', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        status: UserStatus.ACTIVE,
+        lockedUntil: new Date(Date.now() + 60000),
+      });
+
+      await expect(
+        service.login({ identifier: 'locked@test.com', password: 'Test1234' }, '127.0.0.1', 'test'),
+      ).rejects.toMatchObject({ code: 'AUTH_ACCOUNT_LOCKED' });
+    });
+  });
+
+  describe('refreshToken — current user status check (SEC-019)', () => {
+    const validSession = (user: Record<string, unknown>) => ({
+      id: 'session-1',
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 86400000),
+      userId: 'user-1',
+      user,
+    });
+
+    const setupJwt = () => {
+      (service as any).jwt = {
+        sign: jest.fn().mockReturnValue('new-token'),
+        verify: jest.fn().mockReturnValue({ sub: 'user-1', type: 'refresh' }),
+      };
+    };
+
+    it('should revoke the session and reject refresh for a SUSPENDED user', async () => {
+      setupJwt();
+      prisma.userSession.findUnique.mockResolvedValue(
+        validSession({ id: 'user-1', status: 'SUSPENDED', deletedAt: null, lockedUntil: null }),
+      );
+
+      await expect(
+        service.refreshToken({ refreshToken: 'valid-token' }),
+      ).rejects.toMatchObject({ code: 'AUTH_REFRESH_REVOKED' });
+
+      expect(prisma.userSession.update).toHaveBeenCalledWith({
+        where: { id: 'session-1' },
+        data: { isRevoked: true },
+      });
+      expect(prisma.userSession.create).not.toHaveBeenCalled();
+    });
+
+    it('should revoke the session and reject refresh for a soft-deleted user', async () => {
+      setupJwt();
+      prisma.userSession.findUnique.mockResolvedValue(
+        validSession({
+          id: 'user-1',
+          status: 'ACTIVE',
+          deletedAt: new Date(),
+          lockedUntil: null,
+        }),
+      );
+
+      await expect(
+        service.refreshToken({ refreshToken: 'valid-token' }),
+      ).rejects.toMatchObject({ code: 'AUTH_REFRESH_REVOKED' });
+
+      expect(prisma.userSession.update).toHaveBeenCalledWith({
+        where: { id: 'session-1' },
+        data: { isRevoked: true },
+      });
+    });
+
+    it('should revoke the session and reject refresh while the lock is active', async () => {
+      setupJwt();
+      prisma.userSession.findUnique.mockResolvedValue(
+        validSession({
+          id: 'user-1',
+          status: 'ACTIVE',
+          deletedAt: null,
+          lockedUntil: new Date(Date.now() + 60000),
+        }),
+      );
+
+      await expect(
+        service.refreshToken({ refreshToken: 'valid-token' }),
+      ).rejects.toMatchObject({ code: 'AUTH_REFRESH_REVOKED' });
     });
   });
 });

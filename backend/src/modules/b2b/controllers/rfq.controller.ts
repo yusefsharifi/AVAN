@@ -93,8 +93,12 @@ export class RfqController {
   async findById(
     @Param('id') id: string,
     @CurrentUser('sub') userId: string,
+    @ZoneId() zoneId: string | undefined,
+    @CurrentUser('companyId') companyId: string | undefined,
+    @CurrentUser('role') role: string | undefined,
   ) {
-    const data = await this.rfqService.findById(id, userId);
+    // SECURITY (SEC-024): scope is always server-derived (request.*)
+    const data = await this.rfqService.findById(id, userId, { zoneId, companyId, role });
     return { success: true, data };
   }
 
@@ -108,8 +112,13 @@ export class RfqController {
     // UI's "save" reported success without writing anything.
     @Body() dto: UpdateRfqDto,
     @CurrentUser('sub') userId: string,
+    @ZoneId() zoneId: string | undefined,
+    @CurrentUser('companyId') companyId: string | undefined,
+    @CurrentUser('role') role: string | undefined,
   ) {
-    const data = await this.rfqService.update(id, dto, userId);
+    // SECURITY (SEC-024): ownership of the draft is enforced with the
+    // server-derived company scope.
+    const data = await this.rfqService.update(id, dto, userId, { zoneId, companyId, role });
     return { success: true, data };
   }
 
@@ -197,8 +206,13 @@ export class RfqController {
   @RequirePermission('b2b.rfq.list.view')
   @Roles('COMPANY_STAFF', 'COMPANY_MANAGER', 'COMPANY_ADMIN')
   @ApiOperation({ summary: 'List clarifications for RFQ' })
-  async getClarifications(@Param('id') id: string) {
-    const data = await this.rfqService.getClarifications(id);
+  async getClarifications(
+    @Param('id') id: string,
+    @ZoneId() zoneId: string | undefined,
+    @CurrentUser('companyId') companyId: string | undefined,
+    @CurrentUser('role') role: string | undefined,
+  ) {
+    const data = await this.rfqService.getClarifications(id, undefined, { zoneId, companyId, role });
     return { success: true, data };
   }
 

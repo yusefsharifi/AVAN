@@ -11,6 +11,14 @@ export const ERROR_CODES = {
     httpStatus: 401,
   },
   AUTH_ACCOUNT_PENDING: {
+    code: 'AUTH_ACCOUNT_PENDING',
+    message: 'حساب کاربری شما هنوز تأیید نشده است',
+    httpStatus: 403,
+  },
+  AUTH_ACCOUNT_NOT_ACTIVE: {
+    code: 'AUTH_ACCOUNT_NOT_ACTIVE',
+    message: 'حساب کاربری شما فعال نیست',
+    httpStatus: 403,
   },
   AUTH_ACCOUNT_SUSPENDED: {
   },
@@ -124,6 +132,8 @@ export const ERROR_CODES = {
   QR_ALREADY_USED: { code: 'QR_ALREADY_USED', message: 'QR قبلاً استفاده شده است', httpStatus: 400 },
   SHIFT_ALREADY_ACTIVE: { code: 'SHIFT_ALREADY_ACTIVE', message: 'شیفت فعال وجود دارد', httpStatus: 400 },
   SHIFT_NOT_FOUND: { code: 'SHIFT_NOT_FOUND', message: 'شیفت یافت نشد', httpStatus: 404 },
+  GUARD_NO_ACTIVE_ASSIGNMENT: { code: 'GUARD_NO_ACTIVE_ASSIGNMENT', message: 'انتساب فعالی برای این نگهبان یافت نشد', httpStatus: 403 },
+  GUARD_ASSIGNMENT_NOT_FOUND: { code: 'GUARD_ASSIGNMENT_NOT_FOUND', message: 'انتساب نگهبان یافت نشد', httpStatus: 404 },
   OVERRIDE_NOT_PENDING: { code: 'OVERRIDE_NOT_PENDING', message: 'درخواست در انتظار تأیید نیست', httpStatus: 400 },
   BLACKLIST_ENTRY_EXISTS: { code: 'BLACKLIST_ENTRY_EXISTS', message: 'این مورد در لیست سیاه وجود دارد', httpStatus: 409 },
   INCIDENT_NOT_FOUND: { code: 'INCIDENT_NOT_FOUND', message: 'حادثه یافت نشد', httpStatus: 404 },

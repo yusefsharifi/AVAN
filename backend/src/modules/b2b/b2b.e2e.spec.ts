@@ -407,7 +407,12 @@ describe('B2B Exchange — E2E HTTP Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.rfqNumber).toContain('RFQ-KVH-');
-      expect(mockRfqService.findById).toHaveBeenCalledWith(UUID.rfq1, expect.any(String));
+      // SEC-024: findById now also receives the server-derived access scope
+      expect(mockRfqService.findById).toHaveBeenCalledWith(
+        UUID.rfq1,
+        expect.any(String),
+        expect.objectContaining({ role: expect.any(String) }),
+      );
     });
 
     it('POST /api/v1/b2b/rfq/:id/publish — should publish RFQ', async () => {

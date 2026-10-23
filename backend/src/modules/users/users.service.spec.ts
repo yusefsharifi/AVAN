@@ -109,7 +109,7 @@ describe('UserService', () => {
 
   describe('softDelete', () => {
     it('should soft delete (not hard delete)', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', deletedAt: null });
+      prisma.user.findFirst.mockResolvedValue({ id: 'user-1', deletedAt: null });
       prisma.user.update.mockResolvedValue({});
 
       await service.softDelete('user-1', mockActor);
@@ -147,13 +147,117 @@ describe('UserService', () => {
 
   describe('clear cache on update', () => {
     it('should clear Redis cache on update', async () => {
-      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', deletedAt: null });
+      prisma.user.findFirst.mockResolvedValue({ id: 'user-1', deletedAt: null });
       prisma.user.update.mockResolvedValue({});
 
       await service.update('user-1', { firstName: 'New Name' }, mockActor);
 
       expect(redis.delPattern).toHaveBeenCalledWith('user:profile:user-1*');
       expect(redis.delPattern).toHaveBeenCalledWith('user:permissions:user-1*');
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECURITY (SEC-021) — session revocation on scope change
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('session revocation on scope change', () => {
+    const scopedActor = {
+      userId: 'admin-1',
+      role: UserRole.SUPER_ADMIN,
+      companyId: undefined,
+      zoneId: undefined,
+    };
+
+    it('should revoke all sessions when the role changes', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        role: UserRole.GUARD,
+        zoneId: 'zone-1',
+        companyId: null,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      });
+      prisma.user.update.mockResolvedValue({});
+      prisma.userSession.updateMany.mockResolvedValue({ count: 2 });
+
+      await service.update('user-1', { role: UserRole.ZONE_OPERATOR }, scopedActor);
+
+      expect(prisma.userSession.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', isRevoked: false },
+        data: { isRevoked: true },
+      });
+      expect((service as any).audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'USER_SESSIONS_REVOKED',
+          metadata: { reason: 'scope-change' },
+        }),
+      );
+    });
+
+    it('should revoke all sessions when zoneId / company / status change', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        role: UserRole.GUARD,
+        zoneId: 'zone-1',
+        companyId: null,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      });
+      prisma.user.update.mockResolvedValue({});
+
+      await service.update('user-1', { zoneId: 'zone-2' }, scopedActor);
+      expect(prisma.userSession.updateMany).toHaveBeenCalled();
+      prisma.userSession.updateMany.mockClear();
+
+      await service.update('user-1', { status: UserStatus.SUSPENDED }, scopedActor);
+      expect(prisma.userSession.updateMany).toHaveBeenCalled();
+    });
+
+    it('should NOT revoke sessions for profile-only changes (name change)', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        role: UserRole.GUARD,
+        zoneId: 'zone-1',
+        companyId: null,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      });
+      prisma.user.update.mockResolvedValue({});
+
+      await service.update('user-1', { firstName: 'New', lastName: 'Name' }, scopedActor);
+
+      expect(prisma.userSession.updateMany).not.toHaveBeenCalled();
+      expect((service as any).audit.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'USER_SESSIONS_REVOKED' }),
+      );
+    });
+
+    it('should revoke sessions on suspend and on softDelete', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        role: UserRole.GUARD,
+        zoneId: 'zone-1',
+        companyId: null,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      });
+      prisma.user.update.mockResolvedValue({});
+      prisma.userSession.updateMany.mockResolvedValue({ count: 3 });
+
+      await service.suspend('user-1', 'policy', scopedActor);
+      expect(prisma.userSession.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', isRevoked: false },
+        data: { isRevoked: true },
+      });
+      expect((service as any).audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'USER_SESSIONS_REVOKED' }),
+      );
+
+      prisma.userSession.updateMany.mockClear();
+      await service.softDelete('user-1', { ...scopedActor, userId: 'admin-1' });
+      // id !== actor.userId ⇒ allowed
+      expect(prisma.userSession.updateMany).toHaveBeenCalled();
     });
   });
 });
